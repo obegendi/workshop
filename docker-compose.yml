@@ -1,0 +1,159 @@
+version: '3.1'
+
+services:
+  mongo:
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - 27017:27017
+    networks:
+      - orhun
+  mongoclient:
+    restart: always
+    image: mongoclient/mongoclient
+    environment:
+      MONGO_URL: mongodb://root:example@mongo:27017/admin
+    ports:
+      - 3000:3000
+    networks:
+      - orhun
+    depends_on:
+      - mongo
+  rabbitmq:
+    restart: always
+    image: rabbitmq:3.7.9-management
+    ports:
+      - 5672:5672
+      - 15672:15672
+    environment:
+      - RABBITMQ_DEFAULT_USER=rabbit
+      - RABBITMQ_DEFAULT_PASS=password
+    networks:
+      - orhun
+  elasticsearch:
+    build:
+      context: tools/elasticsearch/
+      args:
+        ELK_VERSION: $ELK_VERSION
+    volumes:
+      - ./tools/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9200']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - orhun
+  logstash:
+    build:
+      context: tools/logstash/
+      args:
+        ELK_VERSION: $ELK_VERSION
+    volumes:
+      - ./tools/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./tools/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    ports:
+      - "5000:5000"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+  kibana:
+    build:
+      context: tools/kibana/
+      args:
+        ELK_VERSION: $ELK_VERSION
+    environment:
+      - "ELASTICSEARCH_URL=http://elasticsearch:9200"
+    volumes:
+      - ./tools/kibana/config/:/usr/share/kibana/config:ro
+    ports:
+      - "5601:5601"   
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - 6379:6379
+    networks:
+      - orhun
+  
+  product.api:
+    build:
+      context: .
+      dockerfile: src/services/Product.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    ports:
+      - 5010:80
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+      - rabbitmq
+      - mongo
+
+  read.api:
+    build:
+      context: .
+      dockerfile: src/services/Read.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    ports:
+      - 5011:80
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+      - rabbitmq
+      - mongo
+
+  search.api:
+    build:
+      context: .
+      dockerfile: src/services/Search.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    ports:
+      - 5012:80
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+      - rabbitmq
+      - mongo
+
+  write.api:
+    build:
+      context: .
+      dockerfile: src/services/Write.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    ports:
+      - 5013:80
+    networks:
+      - orhun
+    depends_on:
+      - elasticsearch
+      - rabbitmq
+      - mongo
+
+networks:
+  orhun:
+    driver: bridge
+
+volumes:
+  db-data: {}  
